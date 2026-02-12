@@ -21,3 +21,7 @@ export interface RagResponse {
   result_count: number
   results: RagResultItem[]
 }
+
+export interface VisionExplainResponse {
+  text: string
+}

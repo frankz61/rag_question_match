@@ -16,6 +16,7 @@ const STEP_NAME: Record<StepKey, string> = {
   ocr: 'OCR',
   review: '审核',
   rag: '检索',
+  explain: '讲解',
 }
 
 export default function AuditTrailPanel({ audits }: AuditTrailPanelProps) {

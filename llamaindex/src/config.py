@@ -45,3 +45,8 @@ OCR_DEVICE = os.getenv("OCR_DEVICE", "auto")
 
 # Hybrid RRF
 HYBRID_RRF_K = int(os.getenv("HYBRID_RRF_K", "60"))
+
+# OpenAI 兼容网关（用于视觉对话）
+OPENAI_API_BASE = os.getenv("OPENAI_API_BASE", "http://localhost:4000/")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+OPENAI_VISION_MODEL = os.getenv("OPENAI_VISION_MODEL", "qwen-vl-max")

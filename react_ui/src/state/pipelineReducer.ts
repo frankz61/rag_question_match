@@ -1,19 +1,27 @@
 import type { RagResponse } from '@/types/api'
 import type {
   AuditEntry,
+  ExplainBranch,
   FileMeta,
   PipelineState,
   StepKey,
   StepState,
 } from '@/types/pipeline'
 
-export const STEP_ORDER: StepKey[] = ['upload', 'ocr', 'review', 'rag']
+export interface PipelineDefaults {
+  defaultTopK: number
+  defaultMatchThreshold: number
+  defaultExplainModel: string
+}
+
+export const STEP_ORDER: StepKey[] = ['upload', 'ocr', 'review', 'rag', 'explain']
 
 const STEP_LABELS: Record<StepKey, string> = {
   upload: '上传图片',
   ocr: 'OCR识别',
   review: '文本审核',
   rag: '向量检索',
+  explain: '试题讲解',
 }
 
 const createInitialSteps = (): Record<StepKey, StepState> => ({
@@ -21,17 +29,40 @@ const createInitialSteps = (): Record<StepKey, StepState> => ({
   ocr: { key: 'ocr', label: STEP_LABELS.ocr, status: 'idle' },
   review: { key: 'review', label: STEP_LABELS.review, status: 'idle' },
   rag: { key: 'rag', label: STEP_LABELS.rag, status: 'idle' },
+  explain: { key: 'explain', label: STEP_LABELS.explain, status: 'idle' },
 })
 
-export const createInitialState = (defaultTopK: number): PipelineState => ({
+const omitAudits = (
+  audits: Partial<Record<StepKey, AuditEntry>>,
+  keys: StepKey[],
+): Partial<Record<StepKey, AuditEntry>> => {
+  const nextAudits = { ...audits }
+  for (const key of keys) {
+    delete nextAudits[key]
+  }
+  return nextAudits
+}
+
+const explainReadyMessage = (branch: ExplainBranch): string =>
+  branch === 'high_match_context'
+    ? '匹配度较高，可基于检索上下文生成讲解'
+    : '匹配度较低，建议上传图片生成讲解'
+
+export const createInitialState = (defaults: PipelineDefaults): PipelineState => ({
   selectedFile: null,
   previewUrl: null,
   fileMeta: null,
   ocrText: '',
   reviewText: '',
   reviewConfirmed: false,
-  topK: defaultTopK,
+  topK: defaults.defaultTopK,
   ragResponse: null,
+  matchThreshold: defaults.defaultMatchThreshold,
+  explainModel: defaults.defaultExplainModel,
+  explainBranch: null,
+  explainPromptAuto: '',
+  explainPromptDraft: '',
+  explainResponseText: '',
   audits: {},
   steps: createInitialSteps(),
 })
@@ -88,6 +119,34 @@ type PipelineAction =
       }
     }
   | {
+      type: 'SET_MATCH_THRESHOLD'
+      payload: {
+        value: number
+      }
+    }
+  | {
+      type: 'SET_EXPLAIN_MODEL'
+      payload: {
+        value: string
+      }
+    }
+  | {
+      type: 'SET_EXPLAIN_PROMPT_DRAFT'
+      payload: {
+        value: string
+      }
+    }
+  | {
+      type: 'RESET_EXPLAIN_PROMPT_TO_AUTO'
+    }
+  | {
+      type: 'SYNC_EXPLAIN_PROMPT'
+      payload: {
+        branch: ExplainBranch
+        promptAuto: string
+      }
+    }
+  | {
       type: 'RUN_RAG_START'
     }
   | {
@@ -95,6 +154,8 @@ type PipelineAction =
       payload: {
         response: RagResponse
         audit: AuditEntry
+        explainBranch: ExplainBranch
+        explainPromptAuto: string
       }
     }
   | {
@@ -105,9 +166,26 @@ type PipelineAction =
       }
     }
   | {
+      type: 'RUN_EXPLAIN_START'
+    }
+  | {
+      type: 'RUN_EXPLAIN_SUCCESS'
+      payload: {
+        text: string
+        audit: AuditEntry
+      }
+    }
+  | {
+      type: 'RUN_EXPLAIN_ERROR'
+      payload: {
+        message: string
+        audit?: AuditEntry
+      }
+    }
+  | {
       type: 'RESET'
       payload: {
-        defaultTopK: number
+        defaults: PipelineDefaults
       }
     }
 
@@ -126,6 +204,10 @@ export const pipelineReducer = (
         reviewText: '',
         reviewConfirmed: false,
         ragResponse: null,
+        explainBranch: null,
+        explainPromptAuto: '',
+        explainPromptDraft: '',
+        explainResponseText: '',
         audits: {},
         steps: {
           ...createInitialSteps(),
@@ -147,6 +229,10 @@ export const pipelineReducer = (
         reviewText: '',
         reviewConfirmed: false,
         ragResponse: null,
+        explainBranch: null,
+        explainPromptAuto: '',
+        explainPromptDraft: '',
+        explainResponseText: '',
         audits: { upload: action.payload.audit },
         steps: {
           ...createInitialSteps(),
@@ -162,6 +248,11 @@ export const pipelineReducer = (
     case 'RUN_OCR_START':
       return {
         ...state,
+        explainBranch: null,
+        explainPromptAuto: '',
+        explainPromptDraft: '',
+        explainResponseText: '',
+        audits: omitAudits(state.audits, ['ocr', 'review', 'rag', 'explain']),
         steps: {
           ...state.steps,
           ocr: {
@@ -171,6 +262,7 @@ export const pipelineReducer = (
           },
           review: { ...state.steps.review, status: 'idle', message: undefined },
           rag: { ...state.steps.rag, status: 'idle', message: undefined },
+          explain: { ...state.steps.explain, status: 'idle', message: undefined },
         },
         reviewConfirmed: false,
         ragResponse: null,
@@ -182,8 +274,13 @@ export const pipelineReducer = (
         ocrText: action.payload.text,
         reviewText: action.payload.text,
         reviewConfirmed: false,
+        ragResponse: null,
+        explainBranch: null,
+        explainPromptAuto: '',
+        explainPromptDraft: '',
+        explainResponseText: '',
         audits: {
-          ...state.audits,
+          ...omitAudits(state.audits, ['review', 'rag', 'explain']),
           ocr: action.payload.audit,
         },
         steps: {
@@ -205,14 +302,23 @@ export const pipelineReducer = (
             status: 'idle',
             message: undefined,
           },
+          explain: {
+            ...state.steps.explain,
+            status: 'idle',
+            message: undefined,
+          },
         },
       }
 
     case 'RUN_OCR_ERROR':
       return {
         ...state,
+        explainBranch: null,
+        explainPromptAuto: '',
+        explainPromptDraft: '',
+        explainResponseText: '',
         audits: {
-          ...state.audits,
+          ...omitAudits(state.audits, ['explain']),
           ...(action.payload.audit ? { ocr: action.payload.audit } : {}),
         },
         steps: {
@@ -221,6 +327,11 @@ export const pipelineReducer = (
             ...state.steps.ocr,
             status: 'error',
             message: action.payload.message,
+          },
+          explain: {
+            ...state.steps.explain,
+            status: 'idle',
+            message: undefined,
           },
         },
       }
@@ -231,6 +342,11 @@ export const pipelineReducer = (
         reviewText: action.payload.text,
         reviewConfirmed: false,
         ragResponse: null,
+        explainBranch: null,
+        explainPromptAuto: '',
+        explainPromptDraft: '',
+        explainResponseText: '',
+        audits: omitAudits(state.audits, ['rag', 'explain']),
         steps: {
           ...state.steps,
           review:
@@ -246,6 +362,11 @@ export const pipelineReducer = (
             status: 'idle',
             message: undefined,
           },
+          explain: {
+            ...state.steps.explain,
+            status: 'idle',
+            message: undefined,
+          },
         },
       }
 
@@ -253,8 +374,12 @@ export const pipelineReducer = (
       return {
         ...state,
         reviewConfirmed: true,
+        explainBranch: null,
+        explainPromptAuto: '',
+        explainPromptDraft: '',
+        explainResponseText: '',
         audits: {
-          ...state.audits,
+          ...omitAudits(state.audits, ['rag', 'explain']),
           review: action.payload.audit,
         },
         steps: {
@@ -269,6 +394,11 @@ export const pipelineReducer = (
             status: 'ready',
             message: '可执行向量检索',
           },
+          explain: {
+            ...state.steps.explain,
+            status: 'idle',
+            message: undefined,
+          },
         },
       }
 
@@ -276,17 +406,82 @@ export const pipelineReducer = (
       return {
         ...state,
         topK: action.payload.value,
+        explainBranch: null,
+        explainPromptAuto: '',
+        explainPromptDraft: '',
+        explainResponseText: '',
+        audits: omitAudits(state.audits, ['explain']),
+        steps: {
+          ...state.steps,
+          explain: {
+            ...state.steps.explain,
+            status: 'idle',
+            message: undefined,
+          },
+        },
+      }
+
+    case 'SET_MATCH_THRESHOLD':
+      return {
+        ...state,
+        matchThreshold: action.payload.value,
+      }
+
+    case 'SET_EXPLAIN_MODEL':
+      return {
+        ...state,
+        explainModel: action.payload.value,
+      }
+
+    case 'SET_EXPLAIN_PROMPT_DRAFT':
+      return {
+        ...state,
+        explainPromptDraft: action.payload.value,
+      }
+
+    case 'RESET_EXPLAIN_PROMPT_TO_AUTO':
+      return {
+        ...state,
+        explainPromptDraft: state.explainPromptAuto,
+      }
+
+    case 'SYNC_EXPLAIN_PROMPT':
+      return {
+        ...state,
+        explainBranch: action.payload.branch,
+        explainPromptAuto: action.payload.promptAuto,
+        explainPromptDraft: action.payload.promptAuto,
+        explainResponseText: '',
+        audits: omitAudits(state.audits, ['explain']),
+        steps: {
+          ...state.steps,
+          explain: {
+            ...state.steps.explain,
+            status: 'ready',
+            message: explainReadyMessage(action.payload.branch),
+          },
+        },
       }
 
     case 'RUN_RAG_START':
       return {
         ...state,
+        explainBranch: null,
+        explainPromptAuto: '',
+        explainPromptDraft: '',
+        explainResponseText: '',
+        audits: omitAudits(state.audits, ['explain']),
         steps: {
           ...state.steps,
           rag: {
             ...state.steps.rag,
             status: 'running',
             message: '正在执行向量检索',
+          },
+          explain: {
+            ...state.steps.explain,
+            status: 'idle',
+            message: undefined,
           },
         },
       }
@@ -295,8 +490,12 @@ export const pipelineReducer = (
       return {
         ...state,
         ragResponse: action.payload.response,
+        explainBranch: action.payload.explainBranch,
+        explainPromptAuto: action.payload.explainPromptAuto,
+        explainPromptDraft: action.payload.explainPromptAuto,
+        explainResponseText: '',
         audits: {
-          ...state.audits,
+          ...omitAudits(state.audits, ['explain']),
           rag: action.payload.audit,
         },
         steps: {
@@ -306,14 +505,23 @@ export const pipelineReducer = (
             status: 'success',
             message: `返回 ${action.payload.response.result_count} 条结果`,
           },
+          explain: {
+            ...state.steps.explain,
+            status: 'ready',
+            message: explainReadyMessage(action.payload.explainBranch),
+          },
         },
       }
 
     case 'RUN_RAG_ERROR':
       return {
         ...state,
+        explainBranch: null,
+        explainPromptAuto: '',
+        explainPromptDraft: '',
+        explainResponseText: '',
         audits: {
-          ...state.audits,
+          ...omitAudits(state.audits, ['explain']),
           ...(action.payload.audit ? { rag: action.payload.audit } : {}),
         },
         steps: {
@@ -323,11 +531,66 @@ export const pipelineReducer = (
             status: 'error',
             message: action.payload.message,
           },
+          explain: {
+            ...state.steps.explain,
+            status: 'idle',
+            message: undefined,
+          },
+        },
+      }
+
+    case 'RUN_EXPLAIN_START':
+      return {
+        ...state,
+        explainResponseText: '',
+        audits: omitAudits(state.audits, ['explain']),
+        steps: {
+          ...state.steps,
+          explain: {
+            ...state.steps.explain,
+            status: 'running',
+            message: '正在生成试题讲解',
+          },
+        },
+      }
+
+    case 'RUN_EXPLAIN_SUCCESS':
+      return {
+        ...state,
+        explainResponseText: action.payload.text,
+        audits: {
+          ...state.audits,
+          explain: action.payload.audit,
+        },
+        steps: {
+          ...state.steps,
+          explain: {
+            ...state.steps.explain,
+            status: 'success',
+            message: '讲解生成完成',
+          },
+        },
+      }
+
+    case 'RUN_EXPLAIN_ERROR':
+      return {
+        ...state,
+        audits: {
+          ...state.audits,
+          ...(action.payload.audit ? { explain: action.payload.audit } : {}),
+        },
+        steps: {
+          ...state.steps,
+          explain: {
+            ...state.steps.explain,
+            status: 'error',
+            message: action.payload.message,
+          },
         },
       }
 
     case 'RESET':
-      return createInitialState(action.payload.defaultTopK)
+      return createInitialState(action.payload.defaults)
 
     default:
       return state

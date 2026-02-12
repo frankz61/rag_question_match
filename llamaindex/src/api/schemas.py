@@ -24,3 +24,7 @@ class VectorSearchResponse(BaseModel):
     top_k: int
     result_count: int
     results: list[OCRMatchItem]
+
+
+class VisionChatResponse(BaseModel):
+    text: str

@@ -1,4 +1,9 @@
-import type { OcrResponse, RagRequest, RagResponse } from '@/types/api'
+import type {
+  OcrResponse,
+  RagRequest,
+  RagResponse,
+  VisionExplainResponse,
+} from '@/types/api'
 import type { HttpAuditSnapshot } from '@/types/pipeline'
 import httpClient, { HttpClientError, isHttpClientError } from '@/services/httpClient'
 
@@ -53,6 +58,37 @@ export const callRag = async (payload: RagRequest): Promise<ApiCallResult<RagRes
     {
       headers: {
         'Content-Type': 'application/json',
+      },
+    },
+  )
+  const responseWithAudit = response as typeof response & {
+    audit?: HttpAuditSnapshot
+  }
+
+  return {
+    data: response.data,
+    audit: ensureAudit(responseWithAudit.audit, response.data),
+  }
+}
+
+export const callVisionExplain = async (payload: {
+  prompt: string
+  model: string
+  image?: File
+}): Promise<ApiCallResult<VisionExplainResponse>> => {
+  const formData = new FormData()
+  formData.append('prompt', payload.prompt)
+  formData.append('model', payload.model)
+  if (payload.image) {
+    formData.append('image', payload.image, payload.image.name)
+  }
+
+  const response = await httpClient.post<VisionExplainResponse>(
+    `${RAG_API_PREFIX}/v1/chat/vision`,
+    formData,
+    {
+      headers: {
+        Accept: 'application/json',
       },
     },
   )

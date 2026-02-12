@@ -1,8 +1,10 @@
 import type { RagResponse } from '@/types/api'
 
-export type StepKey = 'upload' | 'ocr' | 'review' | 'rag'
+export type StepKey = 'upload' | 'ocr' | 'review' | 'rag' | 'explain'
 
 export type StepStatus = 'idle' | 'ready' | 'running' | 'success' | 'error'
+
+export type ExplainBranch = 'high_match_context' | 'low_match_image'
 
 export interface StepState {
   key: StepKey
@@ -63,6 +65,12 @@ export interface PipelineState {
   reviewConfirmed: boolean
   topK: number
   ragResponse: RagResponse | null
+  matchThreshold: number
+  explainModel: string
+  explainBranch: ExplainBranch | null
+  explainPromptAuto: string
+  explainPromptDraft: string
+  explainResponseText: string
   steps: Record<StepKey, StepState>
   audits: Partial<Record<StepKey, AuditEntry>>
 }

@@ -13,7 +13,7 @@ interface RequestMetadata {
   requestHeaders: Record<string, string>
 }
 
-const REQUEST_TIMEOUT_MS = Number(import.meta.env.VITE_REQUEST_TIMEOUT_MS ?? 30000)
+const REQUEST_TIMEOUT_MS = Number(import.meta.env.VITE_REQUEST_TIMEOUT_MS ?? 300000)
 
 declare module 'axios' {
   interface InternalAxiosRequestConfig {
@@ -174,7 +174,7 @@ export const isHttpClientError = (error: unknown): error is HttpClientError =>
   error instanceof HttpClientError
 
 const httpClient = axios.create({
-  timeout: Number.isFinite(REQUEST_TIMEOUT_MS) ? REQUEST_TIMEOUT_MS : 30000,
+  timeout: Number.isFinite(REQUEST_TIMEOUT_MS) ? REQUEST_TIMEOUT_MS : 300000,
 })
 
 httpClient.interceptors.request.use((config) => {

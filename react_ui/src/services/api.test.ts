@@ -1,6 +1,6 @@
 import MockAdapter from 'axios-mock-adapter'
 import { describe, expect, it, afterEach } from 'vitest'
-import { callOcr, callRag } from '@/services/api'
+import { callOcr, callRag, callVisionExplain } from '@/services/api'
 import httpClient, { HttpClientError } from '@/services/httpClient'
 
 const mock = new MockAdapter(httpClient)
@@ -85,5 +85,54 @@ describe('api service', () => {
         top_k: 5,
       }),
     ).rejects.toBeInstanceOf(HttpClientError)
+  })
+
+  it('calls vision explain without image for high match branch', async () => {
+    mock.onPost('/api/rag/v1/chat/vision').reply((config) => {
+      expect(config.data).toBeInstanceOf(FormData)
+      const formData = config.data as FormData
+      expect(formData.get('prompt')).toBe('high match prompt')
+      expect(formData.get('model')).toBe('qwen-vl-max')
+      expect(formData.get('image')).toBeNull()
+      return [
+        200,
+        {
+          text: 'markdown explain text',
+        },
+      ]
+    })
+
+    const result = await callVisionExplain({
+      prompt: 'high match prompt',
+      model: 'qwen-vl-max',
+    })
+    expect(result.data.text).toBe('markdown explain text')
+    expect(result.audit.request.method).toBe('POST')
+  })
+
+  it('calls vision explain with image for low match branch', async () => {
+    const file = new File(['image-binary'], 'sample.png', { type: 'image/png' })
+    mock.onPost('/api/rag/v1/chat/vision').reply((config) => {
+      const formData = config.data as FormData
+      expect(formData.get('prompt')).toBe('low match prompt')
+      expect(formData.get('model')).toBe('qwen-vl-max')
+      const image = formData.get('image')
+      expect(image).toBeInstanceOf(File)
+      expect((image as File).name).toBe('sample.png')
+      return [
+        200,
+        {
+          text: 'markdown explain text',
+        },
+      ]
+    })
+
+    const result = await callVisionExplain({
+      prompt: 'low match prompt',
+      model: 'qwen-vl-max',
+      image: file,
+    })
+    expect(result.data.text).toBe('markdown explain text')
+    expect(result.audit.request.url).toBe('/api/rag/v1/chat/vision')
   })
 })
