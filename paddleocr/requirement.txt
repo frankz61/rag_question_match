@@ -1,0 +1,9 @@
+# FastAPI + OCR dependencies
+# If your machine uses CUDA 11.8, replace cu126 with cu118.
+--extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu126/
+paddlepaddle-gpu==3.2.0
+paddleocr==3.4.0
+llama-index-readers-paddle-ocr==0.1.0
+fastapi
+uvicorn
+python-multipart

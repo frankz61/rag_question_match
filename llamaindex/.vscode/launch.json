@@ -1,0 +1,71 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Python: main.py (pick args)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/main.py",
+      "args": ["${command:pickArgs}"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": true,
+      "envFile": "${workspaceFolder}/config.local.env",
+      "env": {
+        "PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK": "True"
+      }
+    },
+    {
+      "name": "API: FastAPI (uvicorn, :8010)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": ["api_main:app", "--host", "0.0.0.0", "--port", "8010"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": true,
+      "envFile": "${workspaceFolder}/config.local.env",
+      "env": {
+        "PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK": "True"
+      }
+    },
+    {
+      "name": "CLI: OCR Match (image)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/main.py",
+      "args": ["ocr-match", "${input:imagePath}", "-k", "5"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": true,
+      "envFile": "${workspaceFolder}/config.local.env",
+      "env": {
+        "PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK": "True"
+      }
+    },
+    {
+      "name": "CLI: Query",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/main.py",
+      "args": ["query", "${input:queryText}", "-k", "5"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": true,
+      "envFile": "${workspaceFolder}/config.local.env"
+    }
+  ],
+  "inputs": [
+    {
+      "id": "imagePath",
+      "type": "promptString",
+      "description": "输入图片路径（png/jpg/jpeg/bmp/tiff）"
+    },
+    {
+      "id": "queryText",
+      "type": "promptString",
+      "description": "输入检索问题",
+      "default": "什么是BGE-M3？"
+    }
+  ]
+}
