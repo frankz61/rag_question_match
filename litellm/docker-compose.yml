@@ -1,0 +1,64 @@
+# LiteLLM 企业级网关 Docker Compose 配置
+# 整合自 openai.md / claude.md / gemini.md 最佳实践
+
+services:
+  # PostgreSQL 数据库服务
+  db:
+    image: postgres:16-alpine
+    container_name: litellm_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: litellm
+      POSTGRES_USER: ${POSTGRES_USER:-litellm}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?请在.env中设置POSTGRES_PASSWORD}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      # 数据持久化到本地目录
+      - ./data/postgres:/var/lib/postgresql/data
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d litellm -U ${POSTGRES_USER:-litellm}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - litellm-network
+
+  # LiteLLM Proxy 网关服务
+  litellm:
+    # 使用 LiteLLM 官方镜像（ghcr.io 国内访问可能有问题）
+    # 备选: ghcr.io/berriai/litellm:main-latest
+    image: docker.litellm.ai/berriai/litellm:main-stable
+    container_name: litellm_proxy
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      # 数据库连接
+      DATABASE_URL: "postgresql://${POSTGRES_USER:-litellm}:${POSTGRES_PASSWORD}@db:5432/litellm"
+      # 允许在 Admin UI 中管理模型（存入数据库）
+      STORE_MODEL_IN_DB: "True"
+      # 日志级别
+      LITELLM_LOG: ${LITELLM_LOG:-INFO}
+    volumes:
+      # 挂载配置文件
+      - ./config.yaml:/app/config.yaml:ro
+    ports:
+      - "${LITELLM_PORT:-4000}:4000"
+    command: ["--config", "/app/config.yaml", "--detailed_debug"]
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:4000/health/liveliness')\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - litellm-network
+
+networks:
+  litellm-network:
+    driver: bridge
